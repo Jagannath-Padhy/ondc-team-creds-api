@@ -139,8 +139,8 @@ async def health() -> Health:
 @app.get("/v1/{provider_id}/{team_id}", response_model=Credential, tags=["credentials"])
 async def get_credential(
     response: Response,
-    provider_id: str = Path(..., min_length=1, examples=["merchant-176467997904410987"]),
-    team_id: str = Path(..., min_length=1, examples=["TEAM6419"]),
+    provider_id: str = Path(..., min_length=1, max_length=128, examples=["merchant-176467997904410987"]),
+    team_id: str = Path(..., min_length=1, max_length=64, examples=["TEAM6419"]),
     repository: CredentialRepository = Depends(get_repository),
 ) -> dict:
     """
