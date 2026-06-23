@@ -1,0 +1,8 @@
+services:
+  team-creds-api:
+    build: .
+    env_file: .env
+    # Host port and container port both come from PORT in .env (default 8000).
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    restart: unless-stopped

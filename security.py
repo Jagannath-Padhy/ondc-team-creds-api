@@ -7,6 +7,10 @@ Signing scheme:
 
 The same canonicalisation is used by the verifier (see verify_client.py),
 so a Buyer App can independently reconstruct the signed bytes.
+
+Only the private key is configured (SIGNING_KEY_HEX); the public key is
+derived from it (`public_key_hex` / `public_key_b64`) and distributed to
+Buyer Apps out-of-band so they can verify signatures.
 """
 
 from __future__ import annotations
@@ -40,17 +44,12 @@ class CredentialSigner:
         signature = self._signing_key.sign(self.canonical_digest(payload)).signature
         return Base64Encoder.encode(signature).decode()
 
-    def jwks(self) -> dict[str, Any]:
-        """Public key in JWKS format (with a hex convenience field)."""
-        return {
-            "keys": [
-                {
-                    "kty": "OKP",
-                    "crv": "Ed25519",
-                    "x": self.verify_key.encode(encoder=Base64Encoder).decode(),
-                    "x_hex": self.verify_key.encode(encoder=HexEncoder).decode(),
-                    "use": "sig",
-                    "kid": self.key_id,
-                }
-            ]
-        }
+    @property
+    def public_key_hex(self) -> str:
+        """Public key as hex — distribute this to Buyer Apps for verification."""
+        return self.verify_key.encode(encoder=HexEncoder).decode()
+
+    @property
+    def public_key_b64(self) -> str:
+        """Public key as base64."""
+        return self.verify_key.encode(encoder=Base64Encoder).decode()

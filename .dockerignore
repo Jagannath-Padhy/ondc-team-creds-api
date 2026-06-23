@@ -1,0 +1,23 @@
+# Secrets / local config
+.env
+
+# VCS / tooling
+.git
+.gitignore
+.claude/
+
+# Python caches / envs
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Docs / data / collections not needed in the image
+README.md
+*.md
+*.csv
+*.xlsx
+*.numbers
+~$*
+*.postman_collection.json

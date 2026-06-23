@@ -24,12 +24,23 @@ different seller.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/v1/team/{team_id}` | Primary `verify_url` — signed credential by TEAM ID |
-| `GET` | `/v1/team/by-provider/{provider_id}` | Lookup by Provider ID |
-| `GET` | `/.well-known/jwks.json` | ONDC public key (JWKS) for signature verification |
+| `GET` | `/v1/{provider_id}/{team_id}` | The `verify_url` — signed credential for a `(provider, TEAM ID)` pair |
 | `GET` | `/health` | Liveness probe |
-| `GET` | `/` | Service info |
-| `GET` | `/docs` | Swagger UI |
+
+Both the provider id and the TEAM ID must match a stored credential. A valid
+TEAM ID paired with the wrong provider returns **404** — this binding stops a
+credential being claimed for a seller it does not belong to.
+
+`credential_id` equals the TEAM ID (globally unique). The response is unchanged
+apart from the `proof` block, which carries a `key_id` identifying which ONDC
+public key verifies the signature.
+
+### Public key for verification
+
+ONDC's public key is **not** served by this API; Buyer Apps obtain it
+out-of-band. The service logs the public key (hex + base64) at startup so the
+operator can distribute it. `proof.key_id` tells a verifier which key to use
+(supports key rotation).
 
 ## Setup
 
@@ -48,12 +59,30 @@ python -c "from nacl.signing import SigningKey; from nacl.encoding import HexEnc
 ## Run
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000
+python app.py                 # binds HOST/PORT from the environment (default 0.0.0.0:8000)
+# or, for local dev with reload:
+uvicorn app:app --reload
 ```
+
+## Run with Docker
+
+```bash
+# Build
+docker build -t ondc-team-creds-api .
+
+# Run (config from .env; PORT overridable)
+docker run --env-file .env -e PORT=8000 -p 8000:8000 ondc-team-creds-api
+
+# Or with docker compose
+docker compose up --build
+```
+
+The container binds `0.0.0.0:$PORT`. `.env` is not baked into the image — pass
+configuration at runtime via `--env-file` / `-e` (or `env_file` in compose).
 
 ## Configuration
 
 All settings come from the environment (or `.env`). See `env.example` for the full list,
-including `RATE_LIMIT_PER_SECOND` (default 300), `TABLE_NAME`, `BASE_URL`, and
+including `HOST`/`PORT`, `RATE_LIMIT_PER_SECOND` (default 300), `TABLE_NAME`, and
 `CORS_ALLOW_ORIGINS`. For multi-worker deployments set `RATE_LIMIT_STORAGE_URI` to a
 shared backend (e.g. Redis) so the rate limiter is enforced across processes.

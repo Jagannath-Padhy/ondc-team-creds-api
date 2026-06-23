@@ -3,11 +3,13 @@ Builds signed TEAM credential documents from raw Supabase rows.
 
 The signature covers everything except the `proof` block (a detached
 proof): we build the payload, sign it, then attach `proof`.
+
+`credential_id` is the TEAM ID itself — a TEAM ID is globally unique and
+maps to exactly one seller, so it doubles as the credential identifier.
 """
 
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
@@ -33,24 +35,11 @@ def _iso_utc(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def generate_credential_id(team_id: str, provider_id: str) -> str:
-    """
-    Deterministic credential id from TEAM ID + Provider ID.
-
-    Same inputs always yield the same id, so a given (seller, scheme)
-    pair maps to exactly one credential id — a single Credit ID cannot
-    legitimately belong to two different sellers.
-    """
-    digest = hashlib.sha256(f"{team_id}:{provider_id}".encode("utf-8")).hexdigest()[:12]
-    return f"CRED-{digest}"
-
-
 class CredentialService:
     """Turns a database row into a signed credential document."""
 
-    def __init__(self, signer: CredentialSigner, base_url: str) -> None:
+    def __init__(self, signer: CredentialSigner) -> None:
         self._signer = signer
-        self._base_url = base_url.rstrip("/")
 
     def build(self, row: dict[str, Any]) -> dict[str, Any]:
         created = datetime.now(timezone.utc)
@@ -59,7 +48,7 @@ class CredentialService:
         provider_id = row[COL_PROVIDER_ID]
 
         payload: dict[str, Any] = {
-            "credential_id": generate_credential_id(team_id, provider_id),
+            "credential_id": team_id,  # TEAM ID is the credential id
             "credential_type": CREDENTIAL_TYPE,
             "entity": {
                 "team_id": team_id,
@@ -80,10 +69,12 @@ class CredentialService:
         }
 
         # Detached proof — signature covers everything above.
+        # `key_id` identifies which ONDC public key verifies this signature;
+        # Buyer Apps hold that key out-of-band.
         payload["proof"] = {
             "type": PROOF_TYPE,
             "created": _iso_utc(created),
-            "verification_method": f"{self._base_url}/.well-known/jwks.json",
+            "key_id": self._signer.key_id,
             "signature": self._signer.sign(payload),
         }
         return payload

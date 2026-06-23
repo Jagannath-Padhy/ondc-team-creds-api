@@ -33,8 +33,11 @@ class Settings(BaseSettings):
     signing_key_hex: str = Field(..., description="Ed25519 private key (64 hex chars)")
     signing_key_id: str = Field("team-creds-v1", description="Key id published in JWKS")
 
+    # ── Server ───────────────────────────────────────────────────────
+    host: str = Field("0.0.0.0", description="Bind host")
+    port: int = Field(8000, ge=1, le=65535, description="Bind port")
+
     # ── App config ───────────────────────────────────────────────────
-    base_url: str = Field("http://localhost:8000", description="Public base URL of this service")
     table_name: str = Field("MSME TEAM Scheme Tag", description="Supabase table holding credentials")
 
     # ── Rate limiting ────────────────────────────────────────────────
@@ -57,11 +60,6 @@ class Settings(BaseSettings):
                 "SIGNING_KEY_HEX must be exactly 64 hex characters (a 32-byte Ed25519 seed)"
             )
         return value
-
-    @field_validator("base_url")
-    @classmethod
-    def _strip_trailing_slash(cls, value: str) -> str:
-        return value.rstrip("/")
 
     @property
     def rate_limit(self) -> str:

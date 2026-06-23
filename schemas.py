@@ -27,7 +27,7 @@ class Issuer(BaseModel):
 class Proof(BaseModel):
     type: str
     created: str
-    verification_method: str
+    key_id: str
     signature: str
 
 
@@ -43,10 +43,3 @@ class Credential(BaseModel):
 class Health(BaseModel):
     status: str
     service: str
-
-
-class ServiceInfo(BaseModel):
-    service: str
-    version: str
-    docs: str
-    endpoints: list[str]

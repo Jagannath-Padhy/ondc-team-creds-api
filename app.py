@@ -2,9 +2,13 @@
 ONDC TEAM Scheme — Verifiable Credential API.
 
 Serves signed, machine-readable credential JSON for sellers verified under
-the TEAM scheme. Buyer Apps hit these URLs (the `verify_url` from the
-on_search creds schema) to confirm a seller's MSME/TEAM eligibility and
-retrieve the details needed for incentive claims.
+the TEAM scheme. Buyer Apps hit a per-seller verify_url to confirm a
+seller's MSME/TEAM eligibility and retrieve the details needed for
+incentive claims.
+
+Endpoints:
+    GET /health
+    GET /v1/{provider_id}/{team_id}     (the verify_url)
 
 Run:  uvicorn app:app --host 0.0.0.0 --port 8000
 """
@@ -25,7 +29,7 @@ from slowapi.util import get_remote_address
 from config import get_settings
 from credentials import CredentialService
 from repository import CredentialRepository, RepositoryError
-from schemas import Credential, Health, ServiceInfo
+from schemas import Credential, Health
 from security import CredentialSigner
 
 settings = get_settings()
@@ -40,7 +44,7 @@ logger = logging.getLogger("team_creds")
 # The async Supabase client is built in the lifespan (it's a coroutine)
 # and stored on app.state — see `get_repository`.
 signer = CredentialSigner(settings.signing_key_hex, key_id=settings.signing_key_id)
-credential_service = CredentialService(signer, settings.base_url)
+credential_service = CredentialService(signer)
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -67,12 +71,14 @@ async def lifespan(app: FastAPI):
         settings.supabase_url, settings.supabase_service_key, settings.table_name
     )
     logger.info(
-        "TEAM Creds API up | table=%r base_url=%s rate=%s kid=%s",
+        "TEAM Creds API up | table=%r rate=%s key_id=%s",
         settings.table_name,
-        settings.base_url,
         settings.rate_limit,
         signer.key_id,
     )
+    # Public key for Buyer Apps to verify signatures (distribute out-of-band).
+    logger.info("ONDC public key (hex):    %s", signer.public_key_hex)
+    logger.info("ONDC public key (base64): %s", signer.public_key_b64)
     yield
     await app.state.repository.aclose()
     logger.info("TEAM Creds API shutting down")
@@ -85,7 +91,7 @@ def get_repository(request: Request) -> CredentialRepository:
 
 app = FastAPI(
     title="ONDC TEAM Credential Verification API",
-    version="1.1.0",
+    version="2.0.0",
     description="Signed, ONDC-hosted verifiable credentials for the MSME TEAM scheme.",
     lifespan=lifespan,
 )
@@ -101,16 +107,6 @@ app.add_middleware(
 )
 
 
-def _credential_not_found(identifier: str) -> HTTPException:
-    return HTTPException(
-        status_code=404,
-        detail={
-            "error": "credential_not_found",
-            "message": f"No verified TEAM credential found for {identifier}",
-        },
-    )
-
-
 _DATASTORE_UNAVAILABLE = HTTPException(
     status_code=503,
     detail={
@@ -120,28 +116,20 @@ _DATASTORE_UNAVAILABLE = HTTPException(
 )
 
 
-def _serve(row: dict, response: Response) -> dict:
-    credential = credential_service.build(row)
-    response.headers.update(CREDENTIAL_HEADERS)
-    return credential
+def _credential_not_found(provider_id: str, team_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={
+            "error": "credential_not_found",
+            "message": (
+                f"No verified TEAM credential for provider {provider_id} "
+                f"and TEAM ID {team_id}"
+            ),
+        },
+    )
 
 
 # ── Routes ───────────────────────────────────────────────────────────
-
-
-@app.get("/", response_model=ServiceInfo, tags=["meta"])
-async def root() -> ServiceInfo:
-    return ServiceInfo(
-        service="team-creds-api",
-        version=app.version,
-        docs="/docs",
-        endpoints=[
-            "/v1/team/{team_id}",
-            "/v1/team/by-provider/{provider_id}",
-            "/.well-known/jwks.json",
-            "/health",
-        ],
-    )
 
 
 @app.get("/health", response_model=Health, tags=["meta"])
@@ -149,49 +137,34 @@ async def health() -> Health:
     return Health(status="ok", service="team-creds-api")
 
 
-@app.get("/.well-known/jwks.json", tags=["verification"])
-async def public_key() -> dict:
-    """ONDC's public key — Buyer Apps fetch this to verify signatures."""
-    return signer.jwks()
-
-
-@app.get("/v1/team/{team_id}", response_model=Credential, tags=["credentials"])
-async def get_team_credential(
+@app.get("/v1/{provider_id}/{team_id}", response_model=Credential, tags=["credentials"])
+async def get_credential(
     response: Response,
+    provider_id: str = Path(..., min_length=1, examples=["merchant-176467997904410987"]),
     team_id: str = Path(..., min_length=1, examples=["TEAM6419"]),
     repository: CredentialRepository = Depends(get_repository),
 ) -> dict:
     """
-    Primary endpoint — the verify_url that Buyer Apps hit.
+    The verify_url that Buyer Apps hit.
 
-    The Buyer App MUST cross-check that `entity.provider_id` in this
-    response matches the provider_id from the on_search response to
-    prevent a valid URL being reused for a different seller.
+    Requires BOTH the provider id and the TEAM ID to match a stored
+    credential. A valid TEAM ID paired with the wrong provider returns
+    404 — this binding stops a credential being claimed for a seller it
+    does not belong to.
     """
     try:
-        row = await repository.get_by_team_id(team_id)
+        row = await repository.get_by_provider_and_team(provider_id, team_id)
     except RepositoryError:
         raise _DATASTORE_UNAVAILABLE
     if row is None:
-        raise _credential_not_found(team_id)
-    return _serve(row, response)
+        raise _credential_not_found(provider_id, team_id)
+
+    credential = credential_service.build(row)
+    response.headers.update(CREDENTIAL_HEADERS)
+    return credential
 
 
-@app.get(
-    "/v1/team/by-provider/{provider_id}",
-    response_model=Credential,
-    tags=["credentials"],
-)
-async def get_by_provider(
-    response: Response,
-    provider_id: str = Path(..., min_length=1, examples=["merchant-176467997904410987"]),
-    repository: CredentialRepository = Depends(get_repository),
-) -> dict:
-    """Alternate lookup — when the Buyer App knows the provider but not the TEAM ID."""
-    try:
-        row = await repository.get_by_provider_id(provider_id)
-    except RepositoryError:
-        raise _DATASTORE_UNAVAILABLE
-    if row is None:
-        raise _credential_not_found(f"provider {provider_id}")
-    return _serve(row, response)
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host=settings.host, port=settings.port)

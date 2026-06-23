@@ -38,26 +38,32 @@ class CredentialRepository:
         client = await create_async_client(url, service_key)
         return cls(client, table_name)
 
-    async def _fetch_one(self, column: str, value: str) -> Optional[dict[str, Any]]:
+    async def get_by_provider_and_team(
+        self, provider_id: str, team_id: str
+    ) -> Optional[dict[str, Any]]:
+        """
+        Fetch the credential matching BOTH the provider and the TEAM ID.
+
+        Requiring both enforces the provider<->credential binding: a valid
+        TEAM ID paired with the wrong provider returns nothing, so a
+        credential cannot be claimed for a seller it doesn't belong to.
+        """
         try:
             result = await (
                 self._client.table(self._table)
                 .select("*")
-                .eq(column, value)
+                .eq(self.PROVIDER_ID_COLUMN, provider_id)
+                .eq(self.TEAM_ID_COLUMN, team_id)
                 .limit(1)
                 .execute()
             )
         except Exception as exc:  # postgrest/httpx raise a range of error types
-            logger.exception("Credential lookup failed (%s=%r)", column, value)
+            logger.exception(
+                "Credential lookup failed (provider=%r team=%r)", provider_id, team_id
+            )
             raise RepositoryError(str(exc)) from exc
 
         return result.data[0] if result.data else None
-
-    async def get_by_team_id(self, team_id: str) -> Optional[dict[str, Any]]:
-        return await self._fetch_one(self.TEAM_ID_COLUMN, team_id)
-
-    async def get_by_provider_id(self, provider_id: str) -> Optional[dict[str, Any]]:
-        return await self._fetch_one(self.PROVIDER_ID_COLUMN, provider_id)
 
     async def aclose(self) -> None:
         """Close the underlying HTTP connections. Call on app shutdown."""
