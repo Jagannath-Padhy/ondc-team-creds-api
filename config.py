@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     table_name: str = Field("MSME TEAM Scheme Tag", description="Supabase table holding credentials")
 
     # ── Rate limiting ────────────────────────────────────────────────
-    rate_limit_per_second: int = Field(300, ge=1, description="Max requests/sec per client IP")
+    rate_limit_per_second: int = Field(20, ge=1, description="Max requests/sec per client IP")
     rate_limit_storage_uri: str = Field(
         "memory://",
         description="limits storage backend; use redis://... in multi-worker prod",

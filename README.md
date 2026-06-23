@@ -83,6 +83,6 @@ configuration at runtime via `--env-file` / `-e` (or `env_file` in compose).
 ## Configuration
 
 All settings come from the environment (or `.env`). See `env.example` for the full list,
-including `HOST`/`PORT`, `RATE_LIMIT_PER_SECOND` (default 300), `TABLE_NAME`, and
+including `HOST`/`PORT`, `RATE_LIMIT_PER_SECOND` (default 20), `TABLE_NAME`, and
 `CORS_ALLOW_ORIGINS`. For multi-worker deployments set `RATE_LIMIT_STORAGE_URI` to a
 shared backend (e.g. Redis) so the rate limiter is enforced across processes.
