@@ -1,0 +1,19 @@
+# Secrets / local config
+.env
+
+# OS / Python
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Postman collection (kept out of version control)
+*.postman_collection.json
+
+# Local data / spreadsheets (may contain real records — keep out of VCS)
+*.xlsx
+*.csv
+*.numbers
+~$*
