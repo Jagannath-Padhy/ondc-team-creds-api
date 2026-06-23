@@ -8,12 +8,45 @@ can prove it was issued by ONDC and was not tampered with — and cross-check it
 the seller in the `on_search` response to stop a valid credential being reused for a
 different seller.
 
+## How it works
+
+The problem: under the TEAM scheme, MSME sellers earn incentives, so a seller
+app could falsely claim a seller is a verified MSME, or reuse one seller's proof
+for another. This service lets a Buyer Network Provider (BNP) ask ONDC directly,
+*"is this specific seller really a verified MSME — and can you prove ONDC said so?"*
+
+The actors:
+
+- **Seller** — an MSME on ONDC, identified by a `Provider ID` and a `TEAM ID`.
+- **ONDC** — the neutral network operator. **This service is run by ONDC** and is
+  the only party that can sign a credential.
+- **BNP / Buyer App** — verifies a seller before honouring an incentive.
+
+The flow:
+
+1. **Onboarding.** ONDC verifies sellers' MSME/TEAM status (Udyam) and stores each
+   as a row in Supabase: `Provider ID`, `TEAM ID`, Udyam number, activity, etc.
+2. **Discovery.** For each verified seller, the `on_search` response carries a
+   `verify_url` of the form `/v1/{provider_id}/{team_id}`. This URL is **hosted by
+   ONDC**, not the seller app — a seller app cannot fake an ONDC-hosted URL.
+3. **Lookup.** The BNP calls the `verify_url`. The API fetches the row matching
+   **both** the provider id and the TEAM ID. No match → **404**. Match → it builds
+   the credential JSON and **signs it with ONDC's private key**.
+4. **Verification.** The BNP checks the signature with ONDC's public key, and
+   confirms the credential's `provider_id` matches the seller from `on_search`.
+   Both pass → the credential is trusted.
+
+The trust model: only ONDC holds the private key, so only ONDC can produce a valid
+signature. The data is public; the **signature** is what proves authenticity and
+that nothing was altered. The `(provider_id, team_id)` binding in the URL stops a
+valid credential being claimed for a seller it doesn't belong to.
+
 ## Architecture
 
 | File | Responsibility |
 |------|----------------|
 | `config.py` | Environment loading + validation (fail-fast via pydantic-settings) |
-| `security.py` | `CredentialSigner` — Ed25519 signing and JWKS public-key publication |
+| `security.py` | `CredentialSigner` — Ed25519 signing, derives the public key |
 | `repository.py` | Async Supabase data access (`AsyncClient`), typed errors |
 | `credentials.py` | Builds the signed credential document from a DB row |
 | `schemas.py` | Pydantic response models (drive the OpenAPI docs) |
@@ -29,18 +62,57 @@ different seller.
 
 Both the provider id and the TEAM ID must match a stored credential. A valid
 TEAM ID paired with the wrong provider returns **404** — this binding stops a
-credential being claimed for a seller it does not belong to.
+credential being claimed for a seller it does not belong to. `credential_id`
+equals the TEAM ID (globally unique).
 
-`credential_id` equals the TEAM ID (globally unique). The response is unchanged
-apart from the `proof` block, which carries a `key_id` identifying which ONDC
-public key verifies the signature.
+## Signing & verification
 
-### Public key for verification
+Each credential is signed with **Ed25519**. The signature is a *detached proof*:
+it covers the whole document **except** the `proof` block itself.
 
-ONDC's public key is **not** served by this API; Buyer Apps obtain it
-out-of-band. The service logs the public key (hex + base64) at startup so the
-operator can distribute it. `proof.key_id` tells a verifier which key to use
-(supports key rotation).
+**How signing works (server side, `security.py` + `credentials.py`):**
+
+1. **Build** the credential payload (everything except `proof`).
+2. **Canonicalise** it to deterministic bytes — JSON with keys sorted and no
+   whitespace (`json.dumps(payload, sort_keys=True, separators=(",", ":"))`). This
+   guarantees the signer and verifier hash the exact same bytes.
+3. **Hash** the canonical bytes with **SHA-256** → a fixed 32-byte digest.
+4. **Sign** the digest with ONDC's **Ed25519 private key**.
+5. **Encode** the signature as base64 and attach it under `proof`:
+
+```json
+"proof": {
+  "type": "Ed25519Sha256",
+  "created": "2026-06-23T11:28:34Z",
+  "signature": "z+W5saiucmMg7RTnNjA/pZMkg8ZecRRCb..."
+}
+```
+
+Credentials are signed **on demand** — freshly generated and signed on every
+request, never stored — so there is always exactly one current key in play.
+
+**How verification works (BNP side, `verify_client.py`):**
+
+1. Fetch the credential; remove the `proof` block.
+2. Canonicalise the rest the same way and SHA-256 it → the same digest.
+3. base64-decode `proof.signature`.
+4. Verify the signature against the digest using **ONDC's public key**. Pass → it
+   was issued by ONDC and not a byte was altered (change any field and verification
+   fails).
+5. Confirm `entity.provider_id` matches the seller from `on_search`.
+
+**Keys.** Only the **private** key is configured, as 64 hex characters in
+`SIGNING_KEY_HEX` (hex is used because it is safe in env files and shells). The
+**public** key is *derived* from it — no need to store it separately — and the
+service logs it (hex + base64) at startup so the operator can distribute it to
+BNPs out-of-band. The public key is **not** served by an endpoint.
+
+> Production note: this implementation hashes with SHA-256 and returns the
+> signature inside the JSON body. ONDC's network convention is BLAKE-512 with the
+> signature in the HTTP `Authorization` header and the public key resolved via the
+> ONDC Registry. Aligning to that convention is the main step before
+> interoperating with standard ONDC verifiers. Also swap the dummy `SIGNING_KEY_HEX`
+> for ONDC's real key in production.
 
 ## Setup
 

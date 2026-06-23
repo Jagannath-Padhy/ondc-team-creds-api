@@ -27,7 +27,6 @@ class Issuer(BaseModel):
 class Proof(BaseModel):
     type: str
     created: str
-    key_id: str
     signature: str
 
 

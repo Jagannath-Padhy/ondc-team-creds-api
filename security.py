@@ -28,10 +28,9 @@ PROOF_TYPE = "Ed25519Sha256"
 class CredentialSigner:
     """Holds the Ed25519 key pair and produces signatures / public-key material."""
 
-    def __init__(self, signing_key_hex: str, key_id: str = "team-creds-v1") -> None:
+    def __init__(self, signing_key_hex: str) -> None:
         self._signing_key = SigningKey(signing_key_hex, encoder=HexEncoder)
         self.verify_key: VerifyKey = self._signing_key.verify_key
-        self.key_id = key_id
 
     @staticmethod
     def canonical_digest(payload: dict[str, Any]) -> bytes:

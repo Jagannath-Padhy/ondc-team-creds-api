@@ -43,7 +43,7 @@ logger = logging.getLogger("team_creds")
 # ── Singletons (sync, cheap to construct) ────────────────────────────
 # The async Supabase client is built in the lifespan (it's a coroutine)
 # and stored on app.state — see `get_repository`.
-signer = CredentialSigner(settings.signing_key_hex, key_id=settings.signing_key_id)
+signer = CredentialSigner(settings.signing_key_hex)
 credential_service = CredentialService(signer)
 
 limiter = Limiter(
@@ -71,10 +71,9 @@ async def lifespan(app: FastAPI):
         settings.supabase_url, settings.supabase_service_key, settings.table_name
     )
     logger.info(
-        "TEAM Creds API up | table=%r rate=%s key_id=%s",
+        "TEAM Creds API up | table=%r rate=%s",
         settings.table_name,
         settings.rate_limit,
-        signer.key_id,
     )
     # Public key for Buyer Apps to verify signatures (distribute out-of-band).
     logger.info("ONDC public key (hex):    %s", signer.public_key_hex)

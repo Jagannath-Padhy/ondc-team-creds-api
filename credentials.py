@@ -69,12 +69,9 @@ class CredentialService:
         }
 
         # Detached proof — signature covers everything above.
-        # `key_id` identifies which ONDC public key verifies this signature;
-        # Buyer Apps hold that key out-of-band.
         payload["proof"] = {
             "type": PROOF_TYPE,
             "created": _iso_utc(created),
-            "key_id": self._signer.key_id,
             "signature": self._signer.sign(payload),
         }
         return payload

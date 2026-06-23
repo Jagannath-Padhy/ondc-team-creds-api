@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     # ── Signing (required) ───────────────────────────────────────────
     # Provided via env only — the app never generates one at runtime.
     signing_key_hex: str = Field(..., description="Ed25519 private key (64 hex chars)")
-    signing_key_id: str = Field("team-creds-v1", description="Key id published in JWKS")
 
     # ── Server ───────────────────────────────────────────────────────
     host: str = Field("0.0.0.0", description="Bind host")

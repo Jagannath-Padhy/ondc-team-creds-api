@@ -10,8 +10,7 @@ What this does:
     3. Cross-checks provider_id against the on_search response
 
 ONDC's public key is obtained out-of-band (it is not served by this API).
-Pass it as `public_key_hex`; the `proof.key_id` field tells you which key
-was used, so you can pick the right one if ONDC rotates keys.
+Pass it as `public_key_hex`.
 
 CRITICAL: The Buyer App MUST check that the provider_id in the signed
 credential matches the provider_id in the on_search response. The server
@@ -72,7 +71,6 @@ def verify_team_credential(
         "provider_id_match": provider_id_match,
         "verified": signature_valid and provider_id_match,
         "credential_id": data.get("credential_id"),
-        "key_id": proof.get("key_id"),
         "team_id": data["entity"]["team_id"],
         "provider_id": data["entity"]["provider_id"],
         "udyam_id": data["verification"]["udyam_id"],
@@ -106,7 +104,6 @@ if __name__ == "__main__":
         if result["verified"]:
             print("✓ VERIFIED — credential is genuine and matches provider")
             print(f"  Credential ID:   {result['credential_id']}")
-            print(f"  Key ID:          {result['key_id']}")
             print(f"  TEAM ID:         {result['team_id']}")
             print(f"  Provider:        {result['provider_id']}")
             print(f"  Udyam:           {result['udyam_id']}")
